@@ -1,47 +1,47 @@
--- Initial
-DROP TABLE IF EXISTS corrections;
-DROP TABLE IF EXISTS users;
-DROP TABLE IF EXISTS projects;
+-- Stored procedure ComputeAverageWeightedScoreForUsers
+DROP PROCEDURE IF EXISTS ComputeAverageWeightedScoreForUsers;
+DELIMITER //
+CREATE PROCEDURE ComputeAverageWeightedScoreForUsers()
+BEGIN
+    DECLARE done INT DEFAULT FALSE;
+    DECLARE user_id INT;
+    DECLARE total_score FLOAT DEFAULT 0;
+    DECLARE total_weight INT DEFAULT 0;
+    DECLARE avg_score FLOAT DEFAULT 0;
 
-CREATE TABLE IF NOT EXISTS users (
-    id int not null AUTO_INCREMENT,
-    name varchar(255) not null,
-    average_score float default 0,
-    PRIMARY KEY (id)
-);
+    -- Cursor to iterate over user IDs
+    DECLARE cur CURSOR FOR SELECT id FROM users;
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
 
-CREATE TABLE IF NOT EXISTS projects (
-    id int not null AUTO_INCREMENT,
-    name varchar(255) not null,
-    weight int default 1,
-    PRIMARY KEY (id)
-);
+    OPEN cur;
 
-CREATE TABLE IF NOT EXISTS corrections (
-    user_id int not null,
-    project_id int not null,
-    score float default 0,
-    KEY `user_id` (`user_id`),
-    KEY `project_id` (`project_id`),
-    CONSTRAINT fk_user_id FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
-    CONSTRAINT fk_project_id FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE
-);
+    read_loop: LOOP
+        FETCH cur INTO user_id;
+        IF done THEN
+            LEAVE read_loop;
+        END IF;
 
-INSERT INTO users (name) VALUES ("Bob");
-SET @user_bob = LAST_INSERT_ID();
+        SET total_score = 0;
+        SET total_weight = 0;
 
-INSERT INTO users (name) VALUES ("Jeanne");
-SET @user_jeanne = LAST_INSERT_ID();
+        -- Calculate total score and total weight for the user
+        SELECT SUM(score * weight), SUM(weight)
+        INTO total_score, total_weight
+        FROM corrections
+        INNER JOIN projects ON corrections.project_id = projects.id
+        WHERE corrections.user_id = user_id;
 
-INSERT INTO projects (name, weight) VALUES ("C is fun", 1);
-SET @project_c = LAST_INSERT_ID();
+        IF total_weight > 0 THEN
+            SET avg_score = total_score / total_weight;
+        END IF;
 
-INSERT INTO projects (name, weight) VALUES ("Python is cool", 2);
-SET @project_py = LAST_INSERT_ID();
+        -- Update average score for the user
+        UPDATE users
+        SET average_score = avg_score
+        WHERE id = user_id;
+    END LOOP;
 
+    CLOSE cur;
+END //
+DELIMITER ;
 
-INSERT INTO corrections (user_id, project_id, score) VALUES (@user_bob, @project_c, 80);
-INSERT INTO corrections (user_id, project_id, score) VALUES (@user_bob, @project_py, 96);
-
-INSERT INTO corrections (user_id, project_id, score) VALUES (@user_jeanne, @project_c, 91);
-INSERT INTO corrections (user_id, project_id, score) VALUES (@user_jeanne, @project_py, 73);
